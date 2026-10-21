@@ -109,8 +109,12 @@ EOF
 cat > "$BIN/claude-stop" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 tmux kill-session -t claude 2>/dev/null && echo "Background Claude Code stopped." || echo "Nothing was running."
-termux-wake-unlock
-echo "Wake lock released: the phone can sleep normally again."
+if tmux has-session -t jarvis 2>/dev/null; then
+  echo "Wake lock kept: the Jarvis server (jarvis-start) is still running."
+else
+  termux-wake-unlock
+  echo "Wake lock released: the phone can sleep normally again."
+fi
 EOF
 
 cat > "$BIN/claude-update" <<'EOF'

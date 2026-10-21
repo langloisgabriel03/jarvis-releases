@@ -26,6 +26,15 @@ if [ -z "${PREFIX:-}" ] || [ ! -d "$PREFIX" ] || ! command -v pkg >/dev/null 2>&
   exit 1
 fi
 
+# proot-distro cannot start from inside another proot Linux (e.g. a Termux set up to open
+# Ubuntu automatically). Detect it and say what to do instead of failing halfway.
+if [ "$(awk '/^TracerPid:/{print $2}' /proc/self/status 2>/dev/null || echo 0)" != "0" ] || [ -n "${PROOT_DISTRIBUTION:-}" ]; then
+  echo "This shell is already inside a proot Linux (Ubuntu/Debian started from Termux)." >&2
+  echo "Type  exit  until you are back in plain Termux (prompt '~ \$'), then run this again." >&2
+  echo "If your Termux opens a Linux automatically, remove that line from ~/.bashrc for now." >&2
+  exit 1
+fi
+
 say "Termux packages"
 pkg update -y
 pkg install -y proot-distro tmux curl
@@ -50,7 +59,11 @@ proot-distro login "$DISTRO" -- bash -euo pipefail -c '
   if ! curl -fsSL https://claude.ai/install.sh | bash; then
     npm install -g @anthropic-ai/claude-code
   fi
-  echo "Claude Code: $(PATH="$HOME/.local/bin:$PATH" claude --version 2>/dev/null || echo "installed")"
+  for c in /root/.local/bin/claude /usr/local/bin/claude /usr/bin/claude; do
+    if [ -x "$c" ]; then echo "Claude Code installed: $c ($("$c" --version 2>/dev/null))"; exit 0; fi
+  done
+  echo "Claude Code did NOT install in Debian." >&2
+  exit 1
 '
 
 say "Commands: claude, claude-start, claude-attach, claude-stop, claude-update"
@@ -59,8 +72,19 @@ say "Commands: claude, claude-start, claude-attach, claude-stop, claude-update"
 # there); the Termux home is mounted at ~/termux and Claude starts in it, so files are shared.
 cat > "$BIN/claude" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
+# Inside Debian this file must never run (it would start proot again): use Debian's own binary.
+if [ -n "${JARVIS_IN_DEBIAN:-}" ] || [ -n "${PROOT_DISTRIBUTION:-}" ]; then
+  echo "Already inside Debian: Claude Code is /root/.local/bin/claude" >&2
+  exit 1
+fi
 exec proot-distro login debian --shared-tmp --bind "$HOME:/root/termux" -- \
-  env PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin" bash -lc 'cd /root/termux && exec claude "$@"' claude "$@"
+  env JARVIS_IN_DEBIAN=1 PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin" bash -c '
+    cd /root/termux
+    for c in /root/.local/bin/claude /usr/local/bin/claude /usr/bin/claude; do
+      [ -x "$c" ] && exec "$c" "$@"
+    done
+    echo "Claude Code is not installed in Debian. Run the setup command again." >&2
+    exit 1' claude "$@"
 EOF
 
 cat > "$BIN/claude-start" <<'EOF'
@@ -91,7 +115,8 @@ EOF
 
 cat > "$BIN/claude-update" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-exec proot-distro login debian -- bash -lc 'export PATH="$HOME/.local/bin:$PATH"; claude update || npm install -g @anthropic-ai/claude-code@latest'
+exec proot-distro login debian -- env JARVIS_IN_DEBIAN=1 PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin" bash -c '
+  if [ -x /root/.local/bin/claude ]; then /root/.local/bin/claude update; else npm install -g @anthropic-ai/claude-code@latest; fi'
 EOF
 
 chmod +x "$BIN/claude" "$BIN/claude-start" "$BIN/claude-attach" "$BIN/claude-stop" "$BIN/claude-update"

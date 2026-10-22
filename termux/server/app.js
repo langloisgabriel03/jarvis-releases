@@ -54,13 +54,17 @@ export async function startServer({ onLog, quiet = false } = {}) {
   // ---------- auth health (cached) ----------
   let authCache = { value: false, at: 0 };
   let authInflight = null;
+  // /health must answer fast (the phone waits 1.5 s): `claude auth status` can take several
+  // seconds (much more under proot on a phone). So once a result is known, answer with it at
+  // once and refresh it in the background; only the very first check is awaited.
   async function isAuthenticated() {
-    if (Date.now() - authCache.at < config.healthCacheMs) return authCache.value;
-    if (!authInflight) {
+    const fresh = Date.now() - authCache.at < config.healthCacheMs;
+    if (!fresh && !authInflight) {
       authInflight = checkAuth()
         .then((value) => { authCache = { value, at: Date.now() }; return value; })
         .finally(() => { authInflight = null; });
     }
+    if (authCache.at) return authCache.value;
     return authInflight;
   }
 

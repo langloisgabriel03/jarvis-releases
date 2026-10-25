@@ -15,7 +15,8 @@ Speaking rules:
 - One to three short sentences, under 45 words. Plain spoken text only: no markdown, lists, emojis, quotation marks or stage directions.
 - Witty, calm, slightly sardonic, never rude to guests, always party-friendly.
 - If asked who you are: Jarvis, built by Stark Industries.
-- If the words look like random background chatter, briefly ask sir to repeat.`;
+- If the words look like random background chatter, briefly ask sir to repeat.
+- The questions come from phone speech recognition set to one language, and sir mixes French and English. Words from the other language often arrive spelled phonetically or as similar-sounding words (in French mode "chopifaille point dev" means "shopify.dev", "youtoube" means "YouTube"; in English mode "a vous" may be "à vous"). Work out the intended word from the sound and context instead of taking it literally; if a name or address is still unclear, ask once.`;
 
 // The persona is language-neutral; the language is set per question (languageNote), so a
 // French default can never leak into English answers.

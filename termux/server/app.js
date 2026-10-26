@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import express from 'express';
 import { config, SERVER_VERSION } from './config.js';
 import { languageNote, timeNote } from './persona.js';
+import { transcribe, whisperAvailable } from './whisper.js';
 import { askClaude, checkApiKeyEnv, createSentenceStream, prewarm, checkAuth, cleanForSpeech, closeAll, resetConversation } from './claude.js';
 
 export { config, SERVER_VERSION, checkAuth };
@@ -70,7 +71,9 @@ export async function startServer({ onLog, quiet = false } = {}) {
 
   // ---------- app ----------
   const app = express();
-  app.use(express.json({ limit: '16kb' }));
+  // Small JSON everywhere, except /transcribe which receives raw audio.
+  const jsonBody = express.json({ limit: '16kb' });
+  app.use((req, res, next) => (req.path === '/transcribe' ? next() : jsonBody(req, res, next)));
 
   function requireToken(req, res, next) {
     if (req.get('x-token') !== config.token) return res.status(401).json({ error: 'unauthorized' });
@@ -79,7 +82,7 @@ export async function startServer({ onLog, quiet = false } = {}) {
 
   app.get('/health', async (_req, res) => {
     const authenticated = await isAuthenticated();
-    res.json({ ok: true, authenticated, computer: config.name, version: SERVER_VERSION, actions: config.actions });
+    res.json({ ok: true, authenticated, computer: config.name, version: SERVER_VERSION, actions: config.actions, whisper: whisperAvailable() });
   });
 
   const FILLERS = {
@@ -112,6 +115,30 @@ export async function startServer({ onLog, quiet = false } = {}) {
     const cut = (v) => String(v ?? '').slice(0, 300);
     return { sentBy: cut(t.why), ...(t.phrase ? { sendWord: cut(t.phrase) } : {}), heard: cut(t.heard), question: cut(text) };
   }
+
+  // POST /transcribe  body: the WAV recorded by the phone (raw bytes).
+  //   headers: x-last-ms (only transcribe the last N ms), x-lang (auto|fr|en), x-prompt (vocabulary,
+  //   URI-encoded). -> {text, ms} or {error}
+  app.post('/transcribe', requireToken, express.raw({ type: () => true, limit: '40mb' }), async (req, res) => {
+    if (!whisperAvailable()) return res.status(501).json({ error: 'whisper not installed' });
+    const started = Date.now();
+    try {
+      let prompt = '';
+      try { prompt = decodeURIComponent(String(req.get('x-prompt') || '')); } catch {}
+      const langHeader = String(req.get('x-lang') || '').toLowerCase();
+      const text = await transcribe(req.body, {
+        lastMs: Number(req.get('x-last-ms')) || 0,
+        lang: ['fr', 'en', 'auto'].includes(langHeader) ? langHeader : config.whisperLang,
+        prompt,
+      });
+      const ms = Date.now() - started;
+      log({ event: 'transcribe', ok: true, ms, bytes: req.body?.length || 0, ...(config.logText ? { text } : { len: text.length }) });
+      res.json({ text, ms });
+    } catch (e) {
+      log({ event: 'transcribe', ok: false, ms: Date.now() - started, error: String(e?.message || e).slice(0, 200) });
+      res.status(500).json({ error: 'transcribe failed' });
+    }
+  });
 
   // POST /ask {text, lang, stream?}
   //   stream:false (default) -> {reply}

@@ -128,11 +128,13 @@ export async function transcribe(buf, { lastMs = 0, lang = config.whisperLang ||
   const { wav, seconds } = lastPartOfWav(buf, lastMs);
   if (seconds < 0.3) return '';
   const sentence = promptSentence(prompt, lang);
+  // whisper-cli in Debian is far too slow (8-20 s) to be worth a fallback once whisper-server is set up.
   if (config.whisperUrl) {
     try {
       return await viaServer(wav, lang, sentence, signal);
     } catch (e) {
-      if (signal?.aborted || !cliAvailable()) throw e; // the phone gave up, or nothing to fall back on
+      const why = e?.cause?.code || (e?.name === 'TimeoutError' ? 'timeout' : e?.message || String(e));
+      throw new Error(`whisper-server (${config.whisperUrl}): ${why}`);
     }
   }
   return viaCli(wav, lang, sentence, signal);

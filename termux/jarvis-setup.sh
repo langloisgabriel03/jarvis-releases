@@ -62,12 +62,16 @@ ENV
     chmod 600 /root/jarvis-server/.env'
 fi
 
-# Whisper (whisper.cpp): understands French and English mixed in one sentence. The app sends the
-# question's audio to the Jarvis server, which passes it to whisper-server. whisper-server is built
-# and run natively in Termux, not in Debian: proot slows every system call down and Whisper took
-# 6-20 s there. It keeps the model loaded between questions. Set WHISPER=0 to skip,
-# WHISPER_MODEL=small-q5_1 for better accuracy (slower, ~190 MB) instead of base-q5_1 (~60 MB).
-if [ "${WHISPER:-1}" != "0" ]; then
+# Whisper now runs inside the Jarvis app (fast cores while the app is on screen; Termux in the
+# background was 5-10 times slower). Server-side Whisper is optional: WHISPER=1 builds whisper.cpp's
+# whisper-server natively in Termux (not in Debian, where proot slows every system call) and the
+# server offers it on /transcribe. WHISPER_MODEL=small-q5_1 instead of base-q5_1 for accuracy.
+if [ "${WHISPER:-0}" != "1" ]; then
+  # Not used by the app any more: free the memory and CPU it would take.
+  tmux kill-session -t whisper 2>/dev/null || true
+  rm -f "$HOME/.jarvis-whisper-model"
+  proot-distro login debian -- sed -i "/^JARVIS_WHISPER_/d" /root/jarvis-server/.env
+else
   say "Whisper speech-to-text (first time: ~5-10 min to compile)"
   MODEL="${WHISPER_MODEL:-base-q5_1}"
   W="$HOME/whisper.cpp"

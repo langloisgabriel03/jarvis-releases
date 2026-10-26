@@ -28,7 +28,7 @@ fi
 say "Jarvis server files"
 proot-distro login debian -- env RAW="$RAW" bash -euo pipefail -c '
   mkdir -p /root/jarvis-server && cd /root/jarvis-server
-  for f in package.json package-lock.json server.js app.js claude.js config.js persona.js; do
+  for f in package.json package-lock.json server.js app.js claude.js config.js persona.js whisper.js; do
     curl -fsSL "$RAW/$f" -o "$f.new" && mv "$f.new" "$f"
   done
   npm ci --omit=dev --no-audit --no-fund
@@ -60,6 +60,31 @@ JARVIS_ACTIONS=off
 JARVIS_CLAUDE_PATH=$(for c in /root/.local/bin/claude /usr/local/bin/claude /usr/bin/claude; do [ -x "$c" ] && echo "$c" && break; done)
 ENV
     chmod 600 /root/jarvis-server/.env'
+fi
+
+# Whisper (whisper.cpp): understands French and English mixed in one sentence. The app sends the
+# question's audio here and uses Whisper's text instead of Android's. Set WHISPER=0 to skip,
+# WHISPER_MODEL=small-q5_1 for better accuracy (slower, ~190 MB) instead of base-q5_1 (~60 MB).
+if [ "${WHISPER:-1}" != "0" ]; then
+  say "Whisper speech-to-text (first time: ~5-10 min to compile)"
+  proot-distro login debian -- env MODEL="${WHISPER_MODEL:-base-q5_1}" bash -euo pipefail -c '
+    export DEBIAN_FRONTEND=noninteractive
+    command -v cmake >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1 || { apt-get update; apt-get install -y --no-install-recommends build-essential cmake git; }
+    if [ -d /root/whisper.cpp/.git ]; then
+      git -C /root/whisper.cpp pull -q --ff-only || true
+    else
+      git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp /root/whisper.cpp
+    fi
+    cd /root/whisper.cpp
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF > /dev/null
+    cmake --build build -j4 --target whisper-cli > /dev/null
+    [ -f "models/ggml-$MODEL.bin" ] || sh ./models/download-ggml-model.sh "$MODEL" > /dev/null
+    test -x build/bin/whisper-cli && test -f "models/ggml-$MODEL.bin"
+    ENV=/root/jarvis-server/.env
+    sed -i "/^JARVIS_WHISPER_/d" "$ENV"
+    printf "JARVIS_WHISPER_BIN=/root/whisper.cpp/build/bin/whisper-cli\nJARVIS_WHISPER_MODEL=/root/whisper.cpp/models/ggml-%s.bin\nJARVIS_WHISPER_THREADS=4\n" "$MODEL" >> "$ENV"
+    echo "Whisper ready ($MODEL)."
+  ' || echo "Whisper could not be installed: the app keeps using Android's recognizer."
 fi
 
 say "Commands: jarvis-start, jarvis-stop, jarvis-log"

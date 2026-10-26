@@ -113,7 +113,14 @@ export async function startServer({ onLog, quiet = false } = {}) {
     const t = body?.trigger;
     if (!t || typeof t !== 'object') return {};
     const cut = (v) => String(v ?? '').slice(0, 300);
-    return { sentBy: cut(t.why), ...(t.phrase ? { sendWord: cut(t.phrase) } : {}), heard: cut(t.heard), question: cut(text) };
+    return { sentBy: cut(t.why), ...(t.phrase ? { sendWord: cut(t.phrase) } : {}), heard: cut(t.heard), question: cut(text), ...(t.whisper ? { whisper: cut(t.whisper) } : {}) };
+  }
+
+  // The phone's trace of how the sentence was heard (live words, voice level, why it ended):
+  // one extra log line, to understand sentences cut too early.
+  function logHeardTrace(body) {
+    const trace = body?.trigger?.trace;
+    if (typeof trace === 'string' && trace) log({ event: 'heard', trace: trace.slice(0, 6000) });
   }
 
   // POST /transcribe  body: the WAV recorded by the phone (raw bytes).
@@ -149,6 +156,7 @@ export async function startServer({ onLog, quiet = false } = {}) {
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text) return res.status(400).json({ error: 'text required' });
     if (text.length > 2000) return res.status(413).json({ error: 'text too long' });
+    logHeardTrace(req.body);
     const lang = typeof req.body?.lang === 'string' ? req.body.lang : '';
     const streaming = req.body?.stream === true;
     const wantTrace = req.body?.trace === true;

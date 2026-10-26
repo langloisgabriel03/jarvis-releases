@@ -101,6 +101,7 @@ function sdkOptions(resume) {
   // up to 1.3 s after the model had started (adaptive thinking is on by default).
   opts.effort = config.effort || 'low';
   opts.thinking = { type: 'disabled' };
+  opts.settings = { alwaysThinkingEnabled: false }; // the same, as a setting (older Claude Code versions)
   if (config.claudePath) opts.pathToClaudeCodeExecutable = config.claudePath; // user's installed claude.exe
   if (resume) opts.resume = resume;
   return opts;

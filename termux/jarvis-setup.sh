@@ -89,12 +89,31 @@ fi
 
 say "Commands: jarvis-start, jarvis-stop, jarvis-log"
 
+# Stops every Jarvis server in Debian, including one left running outside the "jarvis" tmux session
+# (an old version holding port 8787 keeps answering the app while the new one cannot start).
+cat > "$BIN/jarvis-kill-servers" <<'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login debian -- bash -c '
+  n=0
+  for d in /proc/[0-9]*; do
+    [ -r "$d/cmdline" ] || continue
+    # "node server.js" as separate arguments (a shell whose command text mentions it does not count)
+    if tr "\0" "\n" < "$d/cmdline" 2>/dev/null | awk "prev ~ /(^|\/)node\$/ && \$0 == \"server.js\" { f = 1 } { prev = \$0 } END { exit !f }"; then
+      kill "${d#/proc/}" 2>/dev/null && n=$((n+1))
+    fi
+  done
+  [ "$n" -gt 0 ] && echo "Stopped $n Jarvis server process(es)."
+  true
+'
+EOF
+
 cat > "$BIN/jarvis-start" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # Jarvis server in the background (tmux session "jarvis"); the wake lock keeps it alive with the screen off.
 if tmux has-session -t jarvis 2>/dev/null; then
   echo "Jarvis server already running."
 else
+  jarvis-kill-servers # an old server outside tmux would keep port 8787
   termux-wake-lock
   tmux new-session -d -s jarvis \
     "proot-distro login debian -- env JARVIS_IN_DEBIAN=1 bash -c 'cd /root/jarvis-server && node server.js 2>&1 | tee -a /root/jarvis-server/console.log'"
@@ -116,6 +135,7 @@ EOF
 cat > "$BIN/jarvis-stop" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 tmux kill-session -t jarvis 2>/dev/null && echo "Jarvis server stopped." || echo "Jarvis server was not running."
+jarvis-kill-servers
 # Keep the wake lock if a background Claude Code session still needs it.
 if tmux has-session -t claude 2>/dev/null; then
   echo "Wake lock kept: claude-start is still running."
@@ -130,12 +150,13 @@ cat > "$BIN/jarvis-log" <<'EOF'
 exec proot-distro login debian -- tail -n 40 -f /root/jarvis-server/console.log /root/jarvis-server/jarvis.log
 EOF
 
-chmod +x "$BIN/jarvis-start" "$BIN/jarvis-stop" "$BIN/jarvis-log"
+chmod +x "$BIN/jarvis-start" "$BIN/jarvis-stop" "$BIN/jarvis-log" "$BIN/jarvis-kill-servers"
 
 # Updating: a running server still has the old code in memory, so restart it with the new files.
-if tmux has-session -t jarvis 2>/dev/null; then
+if tmux has-session -t jarvis 2>/dev/null || curl -fsS -m 2 http://127.0.0.1:8787/health >/dev/null 2>&1; then
   say "Restarting the running Jarvis server with the new version"
   tmux kill-session -t jarvis 2>/dev/null || true
+  "$BIN/jarvis-kill-servers" || true
   "$BIN/jarvis-start" || true
 fi
 

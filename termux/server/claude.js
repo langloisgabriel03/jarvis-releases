@@ -274,6 +274,18 @@ export function prewarm() {
   }
 }
 
+// Anthropic keeps the instructions cached only a few minutes after the last question; after that
+// the next answer starts slower. The app asks for a refresh when it opens (POST /warm).
+const CACHE_FRESH_MS = 4 * 60 * 1000;
+let lastAskAt = 0;
+
+/** Re-send a tiny throwaway question if the cache has probably expired. Resolves with what it did. */
+export async function keepWarm() {
+  if (Date.now() - lastAskAt < CACHE_FRESH_MS && live && !live.dead) return 'already warm';
+  await askClaude(PRIME_TEXT, 60000);
+  return 'warmed';
+}
+
 /** Forget the conversation and start a clean warm process. */
 export function resetConversation() {
   live?.close();
@@ -292,6 +304,7 @@ const maxAnswerMs = () => (config.actions === 'auto' ? 60000 : 30000);
  */
 export async function askClaude(text, timeoutMs, { onDelta, onTool, onTrace } = {}) {
   turn.checkedWeb = false; // each question must look its own pages up
+  lastAskAt = Date.now();
   prewarm();
   const session = live;
   if (session.priming) await session.priming; // usually long done; otherwise nearly done

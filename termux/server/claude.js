@@ -182,7 +182,10 @@ class LiveSession {
         p.firstMsgAt ??= Date.now();
         if (msg.type === 'stream_event') {
           const ev = msg.event;
-          if (ev?.type === 'message_start') p.apiStartAt ??= Date.now();
+          if (ev?.type === 'message_start') {
+            p.apiStartAt ??= Date.now();
+            p.model ??= ev.message?.model; // which model the alias ("haiku") really is
+          }
           if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
             try { p.onTool?.(ev.content_block.name); } catch {}
           }
@@ -218,7 +221,7 @@ class LiveSession {
           }
           this.pending = null;
           const since = (t) => (t ? `${t - p.sentAt} ms` : '-');
-          trace(p, { timing: `claude code ${since(p.firstMsgAt)}, model starts ${since(p.apiStartAt)}, ${p.thoughtAt ? `thinking from ${since(p.thoughtAt)}, ` : ''}first word ${since(p.firstTextAt)}, done ${since(Date.now())}` });
+          trace(p, { timing: `claude code ${since(p.firstMsgAt)}, model starts ${since(p.apiStartAt)}, ${p.thoughtAt ? `thinking from ${since(p.thoughtAt)}, ` : ''}first word ${since(p.firstTextAt)}, done ${since(Date.now())}${p.model ? `, model ${p.model}` : ''}` });
           if (msg.subtype === 'success' && !msg.is_error) p.resolve(msg.result || p.text);
           else if (p.text) p.resolve(p.text);
           else {

@@ -133,7 +133,11 @@ export async function startServer({ onLog, quiet = false } = {}) {
       let prompt = '';
       try { prompt = decodeURIComponent(String(req.get('x-prompt') || '')); } catch {}
       const langHeader = String(req.get('x-lang') || '').toLowerCase();
+      // The phone gave up (it waits 9 s at most): stop whisper-cli at once.
+      const abort = new AbortController();
+      res.on('close', () => { if (!res.writableFinished) abort.abort(); });
       const text = await transcribe(req.body, {
+        signal: abort.signal,
         lastMs: Number(req.get('x-last-ms')) || 0,
         lang: ['fr', 'en', 'auto'].includes(langHeader) ? langHeader : config.whisperLang,
         prompt,

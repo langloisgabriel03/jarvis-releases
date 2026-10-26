@@ -40,8 +40,39 @@ export function checkApiKeyEnv() {
   }
 }
 
+// ---------- verify before opening a guessed address ----------
+// The model may "remember" a deep URL that points to the wrong thing (asked for the Avengers on
+// Rotten Tomatoes, it opened a 1950 film). Code, not instructions, enforces the rule: a command
+// that opens a specific page (a URL with a path or query) is refused unless Claude looked it up
+// with WebSearch or WebFetch during this question. Home pages (https://youtube.com) and apps open
+// directly.
+const turn = { checkedWeb: false };
+
+function guessedDeepLink(command) {
+  for (const m of String(command || '').matchAll(/https?:\/\/[^\s"'`)]+/gi)) {
+    try {
+      const u = new URL(m[0]);
+      if ((u.pathname && u.pathname !== '/') || u.search) return m[0];
+    } catch {}
+  }
+  return null;
+}
+
+async function verifyBeforeOpening(input) {
+  if (input?.hook_event_name !== 'PreToolUse' || turn.checkedWeb) return {};
+  const url = guessedDeepLink(input.tool_input?.command);
+  if (!url) return {};
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: `Not opened: ${url} is a guessed address. First use WebSearch (or WebFetch) to find the exact page sir means (right title, year, person, edition), then open the URL from the results. If several pages could match, pick the most likely one and mention it in one short sentence.`,
+    },
+  };
+}
+
 // Most turns one PC action may take (tool call, result, next call...). Keeps a confused run short.
-const ACTION_MAX_TURNS = 8;
+const ACTION_MAX_TURNS = 10;
 
 // Default (actions 'off'): the ONLY tool Jarvis may ever use is WebSearch (Anthropic-side search;
 // it cannot read files, run commands or reach this PC's network). Everything else stays removed
@@ -88,6 +119,7 @@ function actionOptions(resume) {
     env: childEnv(),
     includePartialMessages: true,
     maxTurns: ACTION_MAX_TURNS,
+    hooks: { PreToolUse: [{ matcher: 'Bash|PowerShell', hooks: [verifyBeforeOpening] }] },
   };
   if (config.model) opts.model = config.model;
   opts.effort = config.effort || 'low';
@@ -156,7 +188,10 @@ class LiveSession {
           const t = msg.message.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
           if (t.trim()) p.text = t;
           for (const b of msg.message.content) {
-            if (b.type === 'tool_use') trace(p, { tool: b.name, input: brief(b.input) });
+            if (b.type === 'tool_use') {
+              if (b.name === 'WebSearch' || b.name === 'WebFetch') turn.checkedWeb = true;
+              trace(p, { tool: b.name, input: brief(b.input) });
+            }
           }
         } else if (msg.type === 'user' && Array.isArray(msg.message?.content)) {
           // Tool results: report failures (e.g. a command that could not start an app).
@@ -248,6 +283,7 @@ const maxAnswerMs = () => (config.actions === 'auto' ? 60000 : 30000);
  * timeoutMs is the deadline for the FIRST word; onDelta(text) receives words as they stream.
  */
 export async function askClaude(text, timeoutMs, { onDelta, onTool, onTrace } = {}) {
+  turn.checkedWeb = false; // each question must look its own pages up
   prewarm();
   const session = live;
   if (session.priming) await session.priming; // usually long done; otherwise nearly done

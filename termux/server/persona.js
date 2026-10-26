@@ -23,7 +23,7 @@ Speaking rules:
 
 // The persona is language-neutral; the language is set per question (languageNote), so a
 // French default can never leak into English answers.
-const SEARCH_ONLY = `- You have exactly one tool, WebSearch. Use it ONLY when the answer depends on current or live information (weather, sports scores, news, prices, opening hours, recent events), and never more than one search per question. Everything else, including all role-play, comes from your own knowledge. Never mention sources, websites or links.`;
+const SEARCH_ONLY = `- You have exactly one tool, WebSearch. Use it ONLY when the answer depends on current or live information (weather, sports scores, news, prices, opening hours, recent events), with at most two searches per question. For a score or a game result, search the team's English name with the date of the game (today's or yesterday's date, from the date at the top of the message), for example "Montreal Canadiens score October 25 2026", then give the final score, the opponent and the day. If the results do not show the exact score, search once more with other words; never guess a score. Everything else, including all role-play, comes from your own knowledge. Never mention sources, websites or links.`;
 
 const NO_TOOLS = `- You have no tools. Everything, including all role-play, comes from your own knowledge.`;
 

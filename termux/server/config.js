@@ -9,7 +9,7 @@ dotenv.config({ path: path.join(here, '.env'), quiet: true });
 const env = process.env;
 
 // Bump when the server changes; shown on /health so you can tell which PCs are up to date.
-export const SERVER_VERSION = '2026-10-26h';
+export const SERVER_VERSION = '2026-10-26i';
 
 export const config = {
   port: Number(env.PORT) || 8787,
@@ -40,7 +40,8 @@ export const config = {
   sandboxDir: path.join(here, '.sandbox'),
   // Path to claude.exe / claude. Empty = the SDK's own copy, or "claude" on PATH for auth checks.
   claudePath: env.JARVIS_CLAUDE_PATH || '',
-  // Optional speech-to-text with whisper.cpp (mixed French/English). Both paths empty = off.
+  // Optional speech-to-text with whisper.cpp (mixed French/English). No URL and no paths = off.
+  whisperUrl: env.JARVIS_WHISPER_URL || '', // whisper-server in Termux, e.g. http://127.0.0.1:8786/inference
   whisperBin: env.JARVIS_WHISPER_BIN || '',
   whisperModel: env.JARVIS_WHISPER_MODEL || '',
   whisperLang: env.JARVIS_WHISPER_LANG || 'auto',

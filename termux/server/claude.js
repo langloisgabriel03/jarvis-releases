@@ -91,7 +91,9 @@ function sdkOptions(resume) {
     strictMcpConfig: true,        // ignore any MCP servers configured on this machine
     settingSources: [],           // no user/project/local settings, no CLAUDE.md
     cwd: config.sandboxDir,       // empty folder, nothing to read even in theory
-    env: childEnv(),
+    // MAX_THINKING_TOKENS=0 as well as thinking: disabled below: the Claude Code on the phone kept
+    // thinking with the flag alone.
+    env: { ...childEnv(), MAX_THINKING_TOKENS: '0' },
     includePartialMessages: true, // stream words as they are written, so speech can start early
   };
   if (config.model) opts.model = config.model;

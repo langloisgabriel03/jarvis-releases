@@ -5,7 +5,7 @@ import express from 'express';
 import { config, SERVER_VERSION } from './config.js';
 import { languageNote, timeNote } from './persona.js';
 import { transcribe, whisperAvailable } from './whisper.js';
-import { askClaude, checkApiKeyEnv, createSentenceStream, prewarm, checkAuth, cleanForSpeech, closeAll, resetConversation } from './claude.js';
+import { askClaude, checkApiKeyEnv, createSentenceStream, prewarm, checkAuth, cleanForSpeech, closeAll, keepWarm, resetConversation } from './claude.js';
 
 export { config, SERVER_VERSION, checkAuth };
 
@@ -244,6 +244,20 @@ export async function startServer({ onLog, quiet = false } = {}) {
       if (code === 'auth') return res.status(503).json({ error: 'auth' });
       res.status(502).json({ error: code });
     }
+  });
+
+  // The app opened (or came back on screen): make sure the next question starts fast.
+  app.post('/warm', requireToken, (_req, res) => {
+    res.json({ ok: true });
+    const started = Date.now();
+    serialized(async () => {
+      try {
+        const did = await keepWarm();
+        if (did !== 'already warm') log({ event: 'warm', ok: true, ms: Date.now() - started });
+      } catch (e) {
+        log({ event: 'warm', ok: false, detail: String(e?.message || e).slice(0, 200) });
+      }
+    });
   });
 
   app.post('/reset', requireToken, (_req, res) => {

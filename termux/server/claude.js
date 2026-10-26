@@ -194,9 +194,10 @@ class LiveSession {
             }
           }
         } else if (msg.type === 'user' && Array.isArray(msg.message?.content)) {
-          // Tool results: report failures (e.g. a command that could not start an app).
+          // Tool results: failures (e.g. a command that could not start an app) and a short look at the rest.
           for (const b of msg.message.content) {
             if (b.type === 'tool_result' && b.is_error) trace(p, { toolError: brief(b.content) });
+            else if (b.type === 'tool_result') trace(p, { toolResult: brief(b.content, 500) }); // what the search found, for jarvis.log
           }
         } else if (msg.type === 'system' && msg.subtype === 'permission_denied') {
           trace(p, { denied: msg.tool_name, reason: brief(msg.reason || msg.message || '') });

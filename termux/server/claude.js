@@ -172,8 +172,12 @@ class LiveSession {
         if (msg.session_id) this.sessionId = msg.session_id;
         const p = this.pending;
         if (!p) continue;
+        // Where the time goes (jarvis.log): Claude Code itself (first message of any kind), the
+        // model starting to answer (message_start from the API), first word.
+        p.firstMsgAt ??= Date.now();
         if (msg.type === 'stream_event') {
           const ev = msg.event;
+          if (ev?.type === 'message_start') p.apiStartAt ??= Date.now();
           if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
             try { p.onTool?.(ev.content_block.name); } catch {}
           }
@@ -181,6 +185,7 @@ class LiveSession {
             try { p.onTool?.('thinking'); } catch {} // working, not stuck: not a timeout
           }
           if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
+            p.firstTextAt ??= Date.now();
             p.streamed = true;
             try { p.onDelta?.(ev.delta.text); } catch {}
           }
@@ -206,6 +211,8 @@ class LiveSession {
             trace(p, { deniedTotal: msg.permission_denials.map((d) => `${d.tool_name}: ${brief(d.tool_input)}`) });
           }
           this.pending = null;
+          const since = (t) => (t ? `${t - p.sentAt} ms` : '-');
+          trace(p, { timing: `claude code ${since(p.firstMsgAt)}, model starts ${since(p.apiStartAt)}, first word ${since(p.firstTextAt)}, done ${since(Date.now())}` });
           if (msg.subtype === 'success' && !msg.is_error) p.resolve(msg.result || p.text);
           else if (p.text) p.resolve(p.text);
           else {
@@ -232,7 +239,7 @@ class LiveSession {
   ask(text, onDelta, onTool, onTrace) {
     if (this.dead) return Promise.reject(makeError('claude', 'session is closed'));
     return new Promise((resolve, reject) => {
-      this.pending = { resolve, reject, text: '', onDelta, onTool, onTrace, streamed: false };
+      this.pending = { resolve, reject, text: '', onDelta, onTool, onTrace, streamed: false, sentAt: Date.now() };
       this.inbox.push({
         type: 'user',
         message: { role: 'user', content: text },

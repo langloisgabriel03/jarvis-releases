@@ -144,7 +144,7 @@ export async function startServer({ onLog, quiet = false } = {}) {
         lastActivity = Date.now();
         const sentences = createSentenceStream({
           maxSentences: 3,
-          maxWords: 50,
+          maxWords: 60,
           onSentence: (s) => {
             if (firstSentenceMs === undefined) firstSentenceMs = Date.now() - started;
             if (streaming) line({ s });

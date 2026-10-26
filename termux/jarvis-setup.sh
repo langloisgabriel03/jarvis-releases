@@ -81,7 +81,8 @@ if [ "${WHISPER:-1}" != "0" ]; then
     apt-get "${keep[@]}" install clang cmake git make libc++ < /dev/null || return 1
     if [ -d "$W/.git" ]; then git -C "$W" pull -q --ff-only || true; else git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp "$W" || return 1; fi
     cd "$W" || return 1
-    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON > /dev/null || return 1
+    # No OpenMP: on Android its threads spin and wait more than they compute (16 s for 11 s of audio).
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DGGML_OPENMP=OFF > /dev/null || return 1
     cmake --build build -j4 --target whisper-server > /dev/null || return 1
     if [ ! -f "models/ggml-$MODEL.bin" ]; then
       # Reuse the model downloaded for the old Debian build, if there is one.

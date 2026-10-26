@@ -95,8 +95,10 @@ function sdkOptions(resume) {
     includePartialMessages: true, // stream words as they are written, so speech can start early
   };
   if (config.model) opts.model = config.model;
-  // Less silent "thinking" before answering (it can take 5-15 s on odd questions).
+  // No silent "thinking" before answering: measured on the phone, it delayed the first word by
+  // up to 1.3 s after the model had started (adaptive thinking is on by default).
   opts.effort = config.effort || 'low';
+  opts.thinking = { type: 'disabled' };
   if (config.claudePath) opts.pathToClaudeCodeExecutable = config.claudePath; // user's installed claude.exe
   if (resume) opts.resume = resume;
   return opts;
@@ -182,6 +184,7 @@ class LiveSession {
             try { p.onTool?.(ev.content_block.name); } catch {}
           }
           if (ev?.type === 'content_block_start' && ev.content_block?.type === 'thinking') {
+            p.thoughtAt ??= Date.now();
             try { p.onTool?.('thinking'); } catch {} // working, not stuck: not a timeout
           }
           if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
@@ -212,7 +215,7 @@ class LiveSession {
           }
           this.pending = null;
           const since = (t) => (t ? `${t - p.sentAt} ms` : '-');
-          trace(p, { timing: `claude code ${since(p.firstMsgAt)}, model starts ${since(p.apiStartAt)}, first word ${since(p.firstTextAt)}, done ${since(Date.now())}` });
+          trace(p, { timing: `claude code ${since(p.firstMsgAt)}, model starts ${since(p.apiStartAt)}, ${p.thoughtAt ? `thinking from ${since(p.thoughtAt)}, ` : ''}first word ${since(p.firstTextAt)}, done ${since(Date.now())}` });
           if (msg.subtype === 'success' && !msg.is_error) p.resolve(msg.result || p.text);
           else if (p.text) p.resolve(p.text);
           else {

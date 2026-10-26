@@ -63,28 +63,39 @@ ENV
 fi
 
 # Whisper (whisper.cpp): understands French and English mixed in one sentence. The app sends the
-# question's audio here and uses Whisper's text instead of Android's. Set WHISPER=0 to skip,
+# question's audio to the Jarvis server, which passes it to whisper-server. whisper-server is built
+# and run natively in Termux, not in Debian: proot slows every system call down and Whisper took
+# 6-20 s there. It keeps the model loaded between questions. Set WHISPER=0 to skip,
 # WHISPER_MODEL=small-q5_1 for better accuracy (slower, ~190 MB) instead of base-q5_1 (~60 MB).
 if [ "${WHISPER:-1}" != "0" ]; then
   say "Whisper speech-to-text (first time: ~5-10 min to compile)"
-  proot-distro login debian -- env MODEL="${WHISPER_MODEL:-base-q5_1}" bash -euo pipefail -c '
-    export DEBIAN_FRONTEND=noninteractive
-    command -v cmake >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1 || { apt-get update; apt-get install -y --no-install-recommends build-essential cmake git; }
-    if [ -d /root/whisper.cpp/.git ]; then
-      git -C /root/whisper.cpp pull -q --ff-only || true
-    else
-      git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp /root/whisper.cpp
+  MODEL="${WHISPER_MODEL:-base-q5_1}"
+  W="$HOME/whisper.cpp"
+  if (
+    set -e
+    # (< /dev/null: this script itself arrives on stdin through "curl | bash")
+    for p in clang cmake git make; do command -v "$p" >/dev/null 2>&1 || pkg install -y "$p" < /dev/null; done
+    if [ -d "$W/.git" ]; then git -C "$W" pull -q --ff-only || true; else git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp "$W"; fi
+    cd "$W"
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON > /dev/null
+    cmake --build build -j4 --target whisper-server > /dev/null
+    if [ ! -f "models/ggml-$MODEL.bin" ]; then
+      # Reuse the model downloaded for the old Debian build, if there is one.
+      OLD="$PREFIX/var/lib/proot-distro/installed-rootfs/debian/root/whisper.cpp/models/ggml-$MODEL.bin"
+      if [ -f "$OLD" ]; then cp "$OLD" "models/ggml-$MODEL.bin"; else sh ./models/download-ggml-model.sh "$MODEL" > /dev/null; fi
     fi
-    cd /root/whisper.cpp
-    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF > /dev/null
-    cmake --build build -j4 --target whisper-cli > /dev/null
-    [ -f "models/ggml-$MODEL.bin" ] || sh ./models/download-ggml-model.sh "$MODEL" > /dev/null
-    test -x build/bin/whisper-cli && test -f "models/ggml-$MODEL.bin"
-    ENV=/root/jarvis-server/.env
-    sed -i "/^JARVIS_WHISPER_/d" "$ENV"
-    printf "JARVIS_WHISPER_BIN=/root/whisper.cpp/build/bin/whisper-cli\nJARVIS_WHISPER_MODEL=/root/whisper.cpp/models/ggml-%s.bin\nJARVIS_WHISPER_THREADS=4\n" "$MODEL" >> "$ENV"
+    test -x build/bin/whisper-server && test -f "models/ggml-$MODEL.bin"
+  ); then
+    echo "$W/models/ggml-$MODEL.bin" > "$HOME/.jarvis-whisper-model"
+    proot-distro login debian -- bash -c '
+      ENV=/root/jarvis-server/.env
+      sed -i "/^JARVIS_WHISPER_/d" "$ENV"
+      echo "JARVIS_WHISPER_URL=http://127.0.0.1:8786/inference" >> "$ENV"'
+    tmux kill-session -t whisper 2>/dev/null || true # restarted below with the new build
     echo "Whisper ready ($MODEL)."
-  ' || echo "Whisper could not be installed: the app keeps using Android's recognizer."
+  else
+    echo "Whisper could not be installed: the app keeps using Android's recognizer."
+  fi
 fi
 
 say "Commands: jarvis-start, jarvis-stop, jarvis-log"
@@ -110,6 +121,12 @@ EOF
 cat > "$BIN/jarvis-start" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # Jarvis server in the background (tmux session "jarvis"); the wake lock keeps it alive with the screen off.
+# Whisper speech-to-text (natively in Termux, model kept in memory), if installed.
+WMODEL=$(cat "$HOME/.jarvis-whisper-model" 2>/dev/null || true)
+if [ -n "$WMODEL" ] && [ -f "$WMODEL" ] && [ -x "$HOME/whisper.cpp/build/bin/whisper-server" ] && ! tmux has-session -t whisper 2>/dev/null; then
+  tmux new-session -d -s whisper \
+    "$HOME/whisper.cpp/build/bin/whisper-server -m '$WMODEL' --host 127.0.0.1 --port 8786 -t 4 -bs 1 -bo 1 -nf -nt > '$HOME/whisper-server.log' 2>&1"
+fi
 if tmux has-session -t jarvis 2>/dev/null; then
   echo "Jarvis server already running."
 else
@@ -135,6 +152,7 @@ EOF
 cat > "$BIN/jarvis-stop" <<'EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 tmux kill-session -t jarvis 2>/dev/null && echo "Jarvis server stopped." || echo "Jarvis server was not running."
+tmux kill-session -t whisper 2>/dev/null || true
 jarvis-kill-servers
 # Keep the wake lock if a background Claude Code session still needs it.
 if tmux has-session -t claude 2>/dev/null; then
@@ -157,6 +175,7 @@ if tmux has-session -t jarvis 2>/dev/null || curl -fsS -m 2 http://127.0.0.1:878
   say "Restarting the running Jarvis server with the new version"
   tmux kill-session -t jarvis 2>/dev/null || true
   "$BIN/jarvis-kill-servers" || true
+  tmux kill-session -t whisper 2>/dev/null || true
   "$BIN/jarvis-start" || true
 fi
 

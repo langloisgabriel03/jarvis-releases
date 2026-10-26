@@ -8,8 +8,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { config } from './config.js';
 
-export function whisperAvailable() {
+function cliAvailable() {
   return Boolean(config.whisperBin && config.whisperModel && fs.existsSync(config.whisperBin) && fs.existsSync(config.whisperModel));
+}
+
+export function whisperAvailable() {
+  return Boolean(config.whisperUrl) || cliAvailable();
 }
 
 /** Parse a PCM WAV file: { sampleRate, channels, bits, dataStart, dataLength }. */
@@ -61,33 +65,75 @@ export function lastPartOfWav(buf, lastMs) {
 }
 
 /**
- * Transcribe a WAV buffer. lang: 'auto' (default, handles mixed French/English best), 'fr', 'en'.
- * prompt: vocabulary to favour. Resolves with the text; rejects on failure or timeout.
+ * Whisper's prompt reads as the text said just before, so a bare word list makes it answer in the
+ * same style ("Travis, Ciscuit Stormbreaker,"). Give it a short sentence that uses the vocabulary.
  */
-export async function transcribe(buf, { lastMs = 0, lang = config.whisperLang || 'auto', prompt = '', signal } = {}) {
-  const { wav, seconds } = lastPartOfWav(buf, lastMs);
-  if (seconds < 0.3) return '';
+function promptSentence(prompt, lang) {
+  const words = String(prompt || '').split(',').map((w) => w.trim()).filter(Boolean);
+  const unique = [...new Set(words)].slice(0, 30).join(', ');
+  if (!unique) return '';
+  const lead = lang === 'en' ? 'Tony talks to Jarvis about' : 'Tony parle à Jarvis, en français avec des mots anglais, de';
+  return `${lead} ${unique}.`.slice(0, 500);
+}
+
+function cleanText(out) {
+  return String(out)
+    .split('\n')
+    .map((l) => l.replace(/^\s*\[[^\]]*\]\s*/, '').trim()) // timestamps, if any slipped through
+    .filter((l) => l && !/^\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]$/i.test(l) && !/^\((music|silence|bruit)\)$/i.test(l))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** whisper-server (whisper.cpp) running natively in Termux, model kept in memory: much faster than proot. */
+async function viaServer(wav, lang, prompt, signal) {
+  const form = new FormData();
+  form.append('file', new Blob([wav], { type: 'audio/wav' }), 'question.wav');
+  form.append('response_format', 'json');
+  form.append('language', lang);
+  form.append('temperature', '0');
+  form.append('no_timestamps', 'true');
+  if (prompt) form.append('prompt', prompt);
+  const timeout = AbortSignal.timeout(config.whisperTimeoutMs);
+  const r = await fetch(config.whisperUrl, { method: 'POST', body: form, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  if (!r.ok) throw new Error(`whisper-server HTTP ${r.status}`);
+  const body = await r.json();
+  if (body.error) throw new Error(`whisper-server: ${body.error}`);
+  return cleanText(body.text || '');
+}
+
+async function viaCli(wav, lang, prompt, signal) {
   const file = path.join(os.tmpdir(), `jarvis-${process.pid}-${Date.now()}.wav`);
   fs.writeFileSync(file, wav);
-  // Speed on a phone: greedy decoding (the default beam search of 5 is several times slower), no
-  // temperature retries, and an encoder window sized to the clip instead of always 30 s (50 per s).
-  const audioCtx = Math.min(1500, Math.max(256, Math.ceil((seconds + 1) * 50)));
-  const args = ['-m', config.whisperModel, '-f', file, '-l', lang, '-t', String(config.whisperThreads || 4), '-nt', '-np',
-    '-bs', '1', '-bo', '1', '-nf', '-ac', String(audioCtx)];
-  if (prompt) args.push('--prompt', prompt.slice(0, 600));
+  // Greedy decoding (the default beam search of 5 is several times slower), no temperature retries.
+  const args = ['-m', config.whisperModel, '-f', file, '-l', lang, '-t', String(config.whisperThreads || 4), '-nt', '-np', '-bs', '1', '-bo', '1', '-nf'];
+  if (prompt) args.push('--prompt', prompt);
   try {
     const out = await new Promise((resolve, reject) => {
       // The phone stops waiting after 9 s: never keep the CPU busy longer than that (Claude needs it).
       execFile(config.whisperBin, args, { timeout: config.whisperTimeoutMs, maxBuffer: 1024 * 1024, signal }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
     });
-    return String(out)
-      .split('\n')
-      .map((l) => l.replace(/^\s*\[[^\]]*\]\s*/, '').trim()) // timestamps, if any slipped through
-      .filter((l) => l && !/^\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]$/i.test(l) && !/^\((music|silence|bruit)\)$/i.test(l))
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return cleanText(out);
   } finally {
     fs.rm(file, { force: true }, () => {});
   }
+}
+
+/**
+ * Transcribe a WAV buffer. lang: 'fr', 'en' or 'auto'. prompt: comma-separated vocabulary to favour.
+ * Resolves with the text; rejects on failure or timeout.
+ */
+export async function transcribe(buf, { lastMs = 0, lang = config.whisperLang || 'auto', prompt = '', signal } = {}) {
+  const { wav, seconds } = lastPartOfWav(buf, lastMs);
+  if (seconds < 0.3) return '';
+  const sentence = promptSentence(prompt, lang);
+  if (config.whisperUrl) {
+    try {
+      return await viaServer(wav, lang, sentence, signal);
+    } catch (e) {
+      if (signal?.aborted || !cliAvailable()) throw e; // the phone gave up, or nothing to fall back on
+    }
+  }
+  return viaCli(wav, lang, sentence, signal);
 }

@@ -107,6 +107,13 @@ EOF
 
 chmod +x "$BIN/jarvis-start" "$BIN/jarvis-stop" "$BIN/jarvis-log"
 
+# Updating: a running server still has the old code in memory, so restart it with the new files.
+if tmux has-session -t jarvis 2>/dev/null; then
+  say "Restarting the running Jarvis server with the new version"
+  tmux kill-session -t jarvis 2>/dev/null || true
+  "$BIN/jarvis-start" || true
+fi
+
 say "Done"
 cat <<'EOF'
 Start it:  jarvis-start

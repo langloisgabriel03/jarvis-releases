@@ -71,21 +71,26 @@ if [ "${WHISPER:-1}" != "0" ]; then
   say "Whisper speech-to-text (first time: ~5-10 min to compile)"
   MODEL="${WHISPER_MODEL:-base-q5_1}"
   W="$HOME/whisper.cpp"
-  if (
-    set -e
-    # (< /dev/null: this script itself arrives on stdin through "curl | bash")
-    for p in clang cmake git make; do command -v "$p" >/dev/null 2>&1 || pkg install -y "$p" < /dev/null; done
-    if [ -d "$W/.git" ]; then git -C "$W" pull -q --ff-only || true; else git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp "$W"; fi
-    cd "$W"
-    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON > /dev/null
-    cmake --build build -j4 --target whisper-server > /dev/null
+  build_whisper() {
+    # Up-to-date packages: a cmake or git newer than the installed C++ library fails with
+    # "CANNOT LINK EXECUTABLE ... cannot locate symbol". (< /dev/null: this script itself
+    # arrives on stdin through "curl | bash".)
+    local keep=(-y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+    apt-get update < /dev/null || return 1
+    apt-get "${keep[@]}" full-upgrade < /dev/null || return 1
+    apt-get "${keep[@]}" install clang cmake git make libc++ < /dev/null || return 1
+    if [ -d "$W/.git" ]; then git -C "$W" pull -q --ff-only || true; else git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp "$W" || return 1; fi
+    cd "$W" || return 1
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON > /dev/null || return 1
+    cmake --build build -j4 --target whisper-server > /dev/null || return 1
     if [ ! -f "models/ggml-$MODEL.bin" ]; then
       # Reuse the model downloaded for the old Debian build, if there is one.
       OLD="$PREFIX/var/lib/proot-distro/installed-rootfs/debian/root/whisper.cpp/models/ggml-$MODEL.bin"
-      if [ -f "$OLD" ]; then cp "$OLD" "models/ggml-$MODEL.bin"; else sh ./models/download-ggml-model.sh "$MODEL" > /dev/null; fi
+      if [ -f "$OLD" ]; then cp "$OLD" "models/ggml-$MODEL.bin"; else sh ./models/download-ggml-model.sh "$MODEL" > /dev/null; fi || return 1
     fi
     test -x build/bin/whisper-server && test -f "models/ggml-$MODEL.bin"
-  ); then
+  }
+  if (build_whisper); then
     echo "$W/models/ggml-$MODEL.bin" > "$HOME/.jarvis-whisper-model"
     proot-distro login debian -- bash -c '
       ENV=/root/jarvis-server/.env
@@ -94,7 +99,9 @@ if [ "${WHISPER:-1}" != "0" ]; then
     tmux kill-session -t whisper 2>/dev/null || true # restarted below with the new build
     echo "Whisper ready ($MODEL)."
   else
-    echo "Whisper could not be installed: the app keeps using Android's recognizer."
+    # The old whisper-cli in Debian takes 8-20 s: better no Whisper than that one.
+    proot-distro login debian -- sed -i "/^JARVIS_WHISPER_/d" /root/jarvis-server/.env
+    echo "Whisper could not be installed (see the error above): the app keeps using Android's recognizer."
   fi
 fi
 

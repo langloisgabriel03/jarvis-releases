@@ -9,7 +9,7 @@ dotenv.config({ path: path.join(here, '.env'), quiet: true });
 const env = process.env;
 
 // Bump when the server changes; shown on /health so you can tell which PCs are up to date.
-export const SERVER_VERSION = '2026-10-26f';
+export const SERVER_VERSION = '2026-10-26g';
 
 export const config = {
   port: Number(env.PORT) || 8787,

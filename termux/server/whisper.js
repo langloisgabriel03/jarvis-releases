@@ -64,16 +64,21 @@ export function lastPartOfWav(buf, lastMs) {
  * Transcribe a WAV buffer. lang: 'auto' (default, handles mixed French/English best), 'fr', 'en'.
  * prompt: vocabulary to favour. Resolves with the text; rejects on failure or timeout.
  */
-export async function transcribe(buf, { lastMs = 0, lang = config.whisperLang || 'auto', prompt = '' } = {}) {
+export async function transcribe(buf, { lastMs = 0, lang = config.whisperLang || 'auto', prompt = '', signal } = {}) {
   const { wav, seconds } = lastPartOfWav(buf, lastMs);
   if (seconds < 0.3) return '';
   const file = path.join(os.tmpdir(), `jarvis-${process.pid}-${Date.now()}.wav`);
   fs.writeFileSync(file, wav);
-  const args = ['-m', config.whisperModel, '-f', file, '-l', lang, '-t', String(config.whisperThreads || 4), '-nt', '-np'];
+  // Speed on a phone: greedy decoding (the default beam search of 5 is several times slower), no
+  // temperature retries, and an encoder window sized to the clip instead of always 30 s (50 per s).
+  const audioCtx = Math.min(1500, Math.max(256, Math.ceil((seconds + 1) * 50)));
+  const args = ['-m', config.whisperModel, '-f', file, '-l', lang, '-t', String(config.whisperThreads || 4), '-nt', '-np',
+    '-bs', '1', '-bo', '1', '-nf', '-ac', String(audioCtx)];
   if (prompt) args.push('--prompt', prompt.slice(0, 600));
   try {
     const out = await new Promise((resolve, reject) => {
-      execFile(config.whisperBin, args, { timeout: 20000, maxBuffer: 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+      // The phone stops waiting after 9 s: never keep the CPU busy longer than that (Claude needs it).
+      execFile(config.whisperBin, args, { timeout: config.whisperTimeoutMs, maxBuffer: 1024 * 1024, signal }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
     });
     return String(out)
       .split('\n')

@@ -213,7 +213,7 @@ export async function startServer({ onLog, quiet = false } = {}) {
             // Tool calls, denials and tool errors: always logged; streamed too when the caller
             // asks for it (the tray app's test chat sends trace: true; the phone does not).
             onTrace: (t) => {
-              log({ event: 'tool', ...t });
+              log(t.timing ? { event: 'timing', ...t } : { event: 'tool', ...t });
               if (streaming && wantTrace) line({ t });
             },
           });

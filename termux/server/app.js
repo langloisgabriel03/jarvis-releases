@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import express from 'express';
 import { config, SERVER_VERSION } from './config.js';
-import { languageNote, timeNote } from './persona.js';
+import { languageNote, searchNote, timeNote } from './persona.js';
 import { transcribe, whisperAvailable } from './whisper.js';
 import { askClaude, checkApiKeyEnv, createSentenceStream, prewarm, checkAuth, cleanForSpeech, closeAll, keepWarm, resetConversation } from './claude.js';
 
@@ -208,7 +208,7 @@ export async function startServer({ onLog, quiet = false } = {}) {
         const fillerTimer = setTimeout(() => sayFiller('think'), FILLER_AFTER_MS);
         let out;
         try {
-          out = await askClaude(timeNote(req.body?.localTime, config.location) + languageNote(lang, config.language) + text, budget, {
+          out = await askClaude(timeNote(req.body?.localTime, config.location) + languageNote(lang, config.language) + searchNote(text, config.webSearch && config.actions !== 'auto') + text, budget, {
             onDelta: (d) => sentences.push(d),
             onTool: (name) => {
               if (name === 'thinking') return;

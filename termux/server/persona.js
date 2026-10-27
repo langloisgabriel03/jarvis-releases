@@ -118,3 +118,24 @@ export function timeNote(localTime, location = '') {
   }
   return `[Local time: ${t}${location ? `; location: ${location}` : ''}] ${calendarNote(t)}`;
 }
+
+// Questions that need current facts. Haiku 4.5 (no thinking) ignored the rule in the system
+// prompt and answered "when does Avengers: Doomsday come out" from memory, with an old date; a
+// note right next to the question is followed much more reliably. Matched without accents.
+const NEEDS_SEARCH = [
+  // asked explicitly
+  /\b(cherche|recherche|google|googl|look up|search|va voir sur|regarde sur (le )?(web|net|internet)|sur (le )?web|sur internet|online)\b/,
+  // facts that change
+  /\b(date de sortie|sort quand|sortira|sortie du film|sortie de|release date|come[s]? out|coming out|casting|acteurs?|actrices?|actors?|the cast)\b/,
+  /\b(score|resultats?|qui a gagne|who won|classement|standings|match d hier|last game|dernier match)\b/,
+  /\b(meteo|weather|temperature|quel temps|temps qu il fait|il fait combien|va faire combien|va-t-il pleuvoir|pleuvoir|neige|rain|snow)\b/,
+  /\b(prix|price|combien coute|how much (is|does)|horaires?|ouvert|ferme a quelle heure|opening hours|open until)\b/,
+  /\b(nouvelles|news|actualite|aujourd hui dans|elections?|bourse|stock price)\b/,
+];
+
+/** A note telling Claude to search first, for questions about things that change. */
+export function searchNote(text, webSearch = true) {
+  if (!webSearch) return '';
+  const t = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/['’]/g, ' ');
+  return NEEDS_SEARCH.some((r) => r.test(t)) ? '[This needs current facts: use WebSearch before answering, never answer from memory.] ' : '';
+}

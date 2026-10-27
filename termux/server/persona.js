@@ -9,7 +9,7 @@ Role-play rules (most important):
 - Keep the story consistent with what was said earlier in the conversation.
 - Real-world questions (facts, time zones, trivia, advice) are answered truthfully, still in character. If you do not know a real fact, say so with style instead of inventing it.
 {{TOOLS}}
-- Each message starts with the current local date and time. Use it for any question about the time, date, day or how long until something; say the exact time naturally ("It is nine forty-two, sir"). Never say you cannot see a clock.
+- Each message starts with the current local date and time, the next days and the upcoming holidays. Use them for any question about the time, date, day or how long until something: read the weekday, date and "in N days" from that list, never work them out yourself. Say the exact time naturally ("It is nine forty-two, sir"). Never say you cannot see a clock.
 
 Speaking rules:
 - One to three short sentences, under 45 words. Plain spoken text only: no markdown, lists, emojis, quotation marks or stage directions.
@@ -56,7 +56,48 @@ export function languageNote(lang, defaultLang = 'en') {
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-/** "[Local time: ...]" from the phone's clock, or this PC's clock if the app did not send one. */
+// Fixed-date holidays (month 1-12, day), for the calendar line: small models get weekdays and
+// "how many days until" wrong when they work them out themselves ("Halloween is tomorrow,
+// Wednesday the 28th" on the 27th).
+const HOLIDAYS = [
+  [1, 1, "New Year's Day"], [2, 14, "Valentine's Day"], [3, 17, "St. Patrick's Day"],
+  [6, 24, 'Saint-Jean-Baptiste'], [7, 1, 'Canada Day'], [10, 31, 'Halloween'],
+  [11, 11, 'Remembrance Day'], [12, 24, 'Christmas Eve'], [12, 25, 'Christmas'], [12, 31, "New Year's Eve"],
+];
+
+/** Year, month (0-11) and day from the phone's "Tuesday October 27, 2026, 9:57 AM", else today here. */
+function phoneDate(localTime) {
+  const m = /([A-Za-z]+) (\d{1,2}), (\d{4})/.exec(localTime || '');
+  const month = m ? MONTHS.indexOf(m[1]) : -1;
+  if (m && month >= 0) return Date.UTC(Number(m[3]), month, Number(m[2]));
+  const d = new Date();
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dayName = (t) => DAYS[new Date(t).getUTCDay()];
+const dateName = (t) => `${MONTHS[new Date(t).getUTCMonth()]} ${new Date(t).getUTCDate()}`;
+
+/** "Tomorrow: Wednesday October 28. Next days: ...; Upcoming: Halloween, Saturday October 31 (in 4 days)..." */
+export function calendarNote(localTime) {
+  const today = phoneDate(localTime);
+  const holidayOn = (t) => {
+    const d = new Date(t);
+    return HOLIDAYS.find(([mo, da]) => mo === d.getUTCMonth() + 1 && da === d.getUTCDate())?.[2];
+  };
+  const label = (t) => `${dayName(t)} ${dateName(t)}${holidayOn(t) ? ` (${holidayOn(t)})` : ''}`;
+  const next = [];
+  for (let i = 2; i <= 7; i++) next.push(label(today + i * DAY_MS));
+  const upcoming = [];
+  for (let i = 0; i <= 400 && upcoming.length < 2; i++) {
+    const t = today + i * DAY_MS;
+    const h = holidayOn(t);
+    if (h) upcoming.push(`${h}: ${dayName(t)} ${dateName(t)}, ${new Date(t).getUTCFullYear()} (${i === 0 ? 'today' : i === 1 ? 'tomorrow' : `in ${i} days`})`);
+  }
+  return `[Today: ${label(today)}. Tomorrow: ${label(today + DAY_MS)}. Next days: ${next.join(', ')}. Upcoming: ${upcoming.join('; ')}.] `;
+}
+
+/** "[Local time: ...]" from the phone's clock, or this PC's clock if the app did not send one, and the calendar. */
 export function timeNote(localTime, location = '') {
   let t = typeof localTime === 'string' ? localTime.trim().slice(0, 80) : '';
   if (!t) {
@@ -65,5 +106,5 @@ export function timeNote(localTime, location = '') {
     const m = String(d.getMinutes()).padStart(2, '0');
     t = `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'} (${String(h).padStart(2, '0')}:${m})`;
   }
-  return `[Local time: ${t}${location ? `; location: ${location}` : ''}] `;
+  return `[Local time: ${t}${location ? `; location: ${location}` : ''}] ${calendarNote(t)}`;
 }

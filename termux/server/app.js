@@ -113,7 +113,17 @@ export async function startServer({ onLog, quiet = false } = {}) {
     const t = body?.trigger;
     if (!t || typeof t !== 'object') return {};
     const cut = (v) => String(v ?? '').slice(0, 300);
-    return { sentBy: cut(t.why), ...(t.phrase ? { sendWord: cut(t.phrase) } : {}), heard: cut(t.heard), question: cut(text), ...(t.whisper ? { whisper: cut(t.whisper) } : {}) };
+    const ms = (v) => (Number.isFinite(v) ? Math.round(v) : undefined);
+    return {
+      sentBy: cut(t.why),
+      ...(t.phrase ? { sendWord: cut(t.phrase) } : {}),
+      // How long the phone waited before sending: after the last new word, after Android's segment end.
+      afterLastWordMs: ms(t.afterLastWordMs),
+      afterSegmentEndMs: ms(t.afterSegmentEndMs),
+      heard: cut(t.heard),
+      question: cut(text),
+      ...(t.whisper ? { whisper: cut(t.whisper) } : {}),
+    };
   }
 
   // The phone's trace of how the sentence was heard (live words, voice level, why it ended):

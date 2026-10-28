@@ -9,7 +9,7 @@ dotenv.config({ path: path.join(here, '.env'), quiet: true });
 const env = process.env;
 
 // Bump when the server changes; shown on /health so you can tell which PCs are up to date.
-export const SERVER_VERSION = '2026-10-28b';
+export const SERVER_VERSION = '2026-10-28c';
 
 export const config = {
   port: Number(env.PORT) || 8787,
@@ -20,6 +20,9 @@ export const config = {
   token: env.JARVIS_TOKEN || '',
   // Empty = let the CLI pick its default. Recommended: "haiku" (fastest) or "sonnet".
   model: env.JARVIS_MODEL || 'haiku',
+  // Questions that need facts or a web search (see searchNote in persona.js) go to this model:
+  // smarter, it thinks a little, which hardly shows next to a search. Empty = always JARVIS_MODEL.
+  smartModel: env.JARVIS_SMART_MODEL ?? 'claude-haiku-5-5',
   // Minimum 6 s: older .env files say 5000, which proved too tight for role-play answers.
   timeoutMs: Math.max(Number(env.JARVIS_TIMEOUT_MS) || 7000, 6000),
   language: (env.JARVIS_LANGUAGE || 'en').toLowerCase(),

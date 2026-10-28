@@ -208,7 +208,9 @@ export async function startServer({ onLog, quiet = false } = {}) {
         const fillerTimer = setTimeout(() => sayFiller('think'), FILLER_AFTER_MS);
         let out;
         try {
-          out = await askClaude(timeNote(req.body?.localTime, config.location) + languageNote(lang, config.language) + searchNote(text, config.webSearch && config.actions !== 'auto') + text, budget, {
+          const needsFacts = searchNote(text, config.webSearch && config.actions !== 'auto');
+          out = await askClaude(timeNote(req.body?.localTime, config.location) + languageNote(lang, config.language) + needsFacts + text, budget, {
+            model: needsFacts && config.smartModel ? config.smartModel : undefined,
             onDelta: (d) => sentences.push(d),
             onTool: (name) => {
               if (name === 'thinking') return;

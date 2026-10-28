@@ -400,6 +400,7 @@ export function cleanForSpeech(text) {
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/\[\d+\]/g, '')
+    .replace(/(^|[\s.!?])(sources?|références?|references?)\s*:[\s\S]*$/i, '$1') // "Sources:" list after a search
     .replace(/\(\s*[;,.\s]*\)/g, ' ')            // "( ; )" left behind by removed links
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '')

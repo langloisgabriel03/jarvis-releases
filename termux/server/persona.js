@@ -131,7 +131,7 @@ const NEEDS_SEARCH = [
   // "c'est quand que Avengers Doomsday sort", "quand est-ce que le film sort", "when is the new Spider-Man"
   /\b(quand|when)\b.*\b(sor(t|ts|tent|tira|tiront)|film|films|movie|avengers?|doomsday|secret wars|marvel|spider|saison|season|episode|album|concert|spectacle|show)\b/,
   // filmographies: which films a character or an actor appeared in (small models mix them up)
-  /\b(dans quels? (autres? )?films?|in (what|which) (other )?(movies?|films?)|what (other )?movies|filmographie|a joue dans|played in|appeared in|apparait dans)\b/,
+  /\b(dans quels? (autres? )?films?|in (what|which) (other )?(movies?|films?)|what (other )?movies|filmographie|a joue dans|played in|appeared in|apparait dans|joue qui|qui joue|qui jouait|qui a joue|qui incarne|incarne qui|who plays|who played|who is playing)\b/,
   // the next Avengers films, however the recognizer spells them ("avenger domestor", "dooms day")
   /\bavengers?\b.*\b(doom\w*|domes\w*|secret wars?|decembre|december)\b/,
   /\b(score|resultats?|qui a gagne|who won|classement|standings|match d hier|last game|dernier match)\b/,

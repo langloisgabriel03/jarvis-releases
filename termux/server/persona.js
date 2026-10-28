@@ -127,6 +127,10 @@ const NEEDS_SEARCH = [
   /\b(cherche|recherche|google|googl|look up|search|va voir sur|regarde sur (le )?(web|net|internet)|sur (le )?web|sur internet|online)\b/,
   // facts that change
   /\b(date de sortie|sort quand|sortira|sortie du film|sortie de|release date|come[s]? out|coming out|casting|acteurs?|actrices?|actors?|the cast)\b/,
+  // "c'est quand que Avengers Doomsday sort", "quand est-ce que le film sort", "when is the new Spider-Man"
+  /\b(quand|when)\b.*\b(sor(t|ts|tent|tira|tiront)|film|films|movie|avengers?|doomsday|secret wars|marvel|spider|saison|season|episode|album|concert|spectacle|show)\b/,
+  // the next Avengers films, however the recognizer spells them ("avenger domestor", "dooms day")
+  /\bavengers?\b.*\b(doom\w*|domes\w*|secret wars?|decembre|december)\b/,
   /\b(score|resultats?|qui a gagne|who won|classement|standings|match d hier|last game|dernier match)\b/,
   // hockey: le Canadien, games, schedule ("la game", "le prochain match", "ils jouent quand")
   /\b(hockey|canadiens?|habs|le ch|lnh|nhl|maple leafs|leafs|bruins|senators|nordiques|series|playoffs|eliminatoires)\b/,
@@ -140,5 +144,7 @@ const NEEDS_SEARCH = [
 export function searchNote(text, webSearch = true) {
   if (!webSearch) return '';
   const t = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/['’]/g, ' ');
-  return NEEDS_SEARCH.some((r) => r.test(t)) ? '[This needs current facts: use WebSearch before answering, never answer from memory.] ' : '';
+  return NEEDS_SEARCH.some((r) => r.test(t))
+    ? '[This needs current facts. Call WebSearch first, before writing a single word (the phone already says "one moment"); never answer from memory, not even to correct it afterwards.] '
+    : '';
 }

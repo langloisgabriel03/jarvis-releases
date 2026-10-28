@@ -153,6 +153,7 @@ function makeError(code, message = code) {
 class LiveSession {
   constructor(resume) {
     this.sessionId = resume || null;
+    this.model = config.model || null; // the model this process answers with right now
     this.inbox = [];          // user messages waiting to be read by the SDK
     this.waiting = null;      // resolver when the input generator is parked
     this.pending = null;      // { resolve, reject, text } for the in-flight question
@@ -245,6 +246,14 @@ class LiveSession {
     }
   }
 
+  /** Switch model for the next answers (same conversation). undefined = the default JARVIS_MODEL. */
+  async useModel(model) {
+    const want = model || config.model || null;
+    if (want === this.model || this.dead) return;
+    await this.q.setModel(want || undefined);
+    this.model = want;
+  }
+
   ask(text, onDelta, onTool, onTrace) {
     if (this.dead) return Promise.reject(makeError('claude', 'session is closed'));
     return new Promise((resolve, reject) => {
@@ -311,12 +320,14 @@ const maxAnswerMs = () => (config.actions === 'auto' ? 60000 : 30000);
  * Ask Claude one question. Rejects with .code 'timeout' | 'auth' | 'claude'.
  * timeoutMs is the deadline for the FIRST word; onDelta(text) receives words as they stream.
  */
-export async function askClaude(text, timeoutMs, { onDelta, onTool, onTrace } = {}) {
+export async function askClaude(text, timeoutMs, { onDelta, onTool, onTrace, model } = {}) {
   turn.checkedWeb = false; // each question must look its own pages up
   lastAskAt = Date.now();
   prewarm();
   const session = live;
   if (session.priming) await session.priming; // usually long done; otherwise nearly done
+  // Fact questions go to the smarter model, everything else back to the fast default.
+  try { await session.useModel(model); } catch (e) { trace({ onTrace }, { toolError: `model switch failed: ${e?.message || e}` }); }
   let timer;
   let fail;
   let gotFirst = false;
